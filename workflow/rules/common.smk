@@ -36,9 +36,9 @@ genome_dict = f"{genome_prefix}.dict"
 
 # cram variables
 use_cram = config.get("use_cram", False)
-alignmend_ending = "cram" if use_cram else "bam"
-alignmend_index_ending = "crai" if use_cram else "bai"
-alignmend_ending_index_ending = "cram.crai" if use_cram else "bam.bai"
+bam_or_cram = "cram" if use_cram else "bam"
+bam_or_cram_index = "crai" if use_cram else "bai"
+bam_or_cram_index_extended = "cram.crai" if use_cram else "bam.bai"
 
 def _group_or_sample(row):
     group = row.get("group", None)
@@ -157,7 +157,7 @@ def get_control_fdr_input(wildcards):
 
 
 def get_recalibrate_quality_input(wildcards, bai=False):
-    ext = "bai" if bai else "bam"
+    ext = bam_or_cram_index if bai else bam_or_cram
     if is_activated("calc_consensus_reads"):
         return "results/consensus/{}.{}".format(wildcards.sample, ext)
     elif is_activated("primers/trimming"):
@@ -663,6 +663,7 @@ wildcard_constraints:
     caller="|".join(["freebayes", "delly"]),
     filter="|".join(config["calling"]["filter"]),
     event="|".join(config["calling"]["fdr-control"]["events"].keys()),
+    bam_or_cram="bam|cram"
 
 
 caller = list(

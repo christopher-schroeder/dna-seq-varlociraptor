@@ -3,9 +3,9 @@ rule map_reads:
         reads=get_map_reads_input,
         idx=rules.bwa_index.output,
     output:
-        temp("results/mapped/{sample}.bam"),
+        temp("results/mapped/{sample}.{bam_or_cram}"),
     log:
-        "logs/bwa_mem/{sample}.log",
+        "logs/bwa_mem/{sample}.{bam_or_cram}.log",
     params:
         extra=get_read_group,
         sorting="samtools",
@@ -17,32 +17,34 @@ rule map_reads:
 
 rule annotate_umis:
     input:
-        bam="results/mapped/{sample}.bam",
+        bam="results/mapped/{sample}.{bam_or_cram}",
         umi=lambda wc: units.loc[wc.sample]["umis"][0],
     output:
-        temp("results/mapped/{sample}.annotated.bam"),
+        temp("results/mapped/{sample}.annotated.{bam_or_cram}"),
     resources:
         mem_gb="10",
     log:
-        "logs/fgbio/annotate_bam/{sample}.log",
+        "logs/fgbio/annotate_bam/{sample}.{bam_or_cram}.log",
     wrapper:
         "v1.2.0/bio/fgbio/annotatebamwithumis"
 
 
 rule mark_duplicates:
     input:
-        lambda wc: "results/mapped/{sample}.bam"
+        bams=lambda wc: "results/mapped/{sample}.{bam_or_cram}"
         if units.loc[wc.sample, "umis"].isnull().any()
-        else "results/mapped/{sample}.annotated.bam",
+        else "results/mapped/{sample}.annotated.{bam_or_cram}",
+        ref=genome,
     output:
-        bam=temp("results/dedup/{sample}.bam"),
-        metrics="results/qc/dedup/{sample}.metrics.txt",
+        bam=temp("results/dedup/{sample}.{bam_or_cram}"),
+        metrics="results/qc/dedup/{sample}.{bam_or_cram}.metrics.txt",
     log:
-        "logs/picard/dedup/{sample}.log",
+        "logs/picard/dedup/{sample}.{bam_or_cram}.log",
     params:
         extra=get_markduplicates_extra,
+        embed_ref=True,
     wrapper:
-        "v1.2.0/bio/picard/markduplicates"
+        "v1.5.0/bio/picard/markduplicates"
 
 
 rule calc_consensus_reads:
