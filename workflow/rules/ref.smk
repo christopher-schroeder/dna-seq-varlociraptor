@@ -75,16 +75,18 @@ rule remove_iupac_codes:
 
 rule bwa_index:
     input:
-        genome
+        genome,
     output:
-        idx=multiext(genome, ".amb", ".ann", ".bwt", ".pac", ".sa"),
+        idx=multiext(genome, ".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"),
+    params:
+        prefix=genome
     log:
-        "logs/bwa_index.log",
+        f"logs/bwa-mem2_index/{genome}.log",
     resources:
         mem_mb=369000,
     cache: True
     wrapper:
-        "v1.2.0/bio/bwa/index"
+        "v1.5.0/bio/bwa-mem2/index"
 
 
 rule get_vep_cache:

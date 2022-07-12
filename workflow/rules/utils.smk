@@ -29,8 +29,21 @@ rule bam_index:
         "{prefix}.bai",
     log:
         "logs/bam-index/{prefix}.log",
+    threads: 20
     wrapper:
-        "v1.2.0/bio/samtools/index"
+        "v1.7.0/bio/samtools/index"
+
+
+rule cram_index:
+    input:
+        "{prefix}.cram",
+    output:
+        "{prefix}.crai",
+    log:
+        "logs/cram-index/{prefix}.log",
+    threads: 20
+    wrapper:
+        "v1.7.0/bio/samtools/index"
 
 
 rule tabix_known_variants:

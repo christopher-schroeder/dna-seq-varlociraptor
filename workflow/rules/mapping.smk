@@ -2,44 +2,47 @@ rule map_reads:
     input:
         reads=get_map_reads_input,
         idx=rules.bwa_index.output,
+        ref=genome,
     output:
-        temp("results/mapped/{sample}.{bam_or_cram}"),
+        bam=f"results/mapped/{{sample}}.cram"
     log:
-        "logs/bwa_mem/{sample}.{bam_or_cram}.log",
+        "logs/bwa_mem2_sambamba/{sample}.log",
     params:
-        extra=get_read_group,
-        sorting="samtools",
+        index=lambda w, input: os.path.splitext(input.idx[0])[0],
+        extra=lambda w: get_read_group(w) + " -K 500000000",
+        sort="samtools",
         sort_order="coordinate",
-    threads: 8
+        sort_extra=f"--output-fmt cram,embed_ref --reference {genome} -@ 88" # Extra args for sambamba.
+    threads: 88
     wrapper:
-        "v1.4.0/bio/bwa/mem"
+        "v1.7.0/bio/bwa-mem2/mem"
 
 
 rule annotate_umis:
     input:
-        bam="results/mapped/{sample}.{bam_or_cram}",
+        bam="results/mapped/{sample}.cram",
         umi=lambda wc: units.loc[wc.sample]["umis"][0],
     output:
-        temp("results/mapped/{sample}.annotated.{bam_or_cram}"),
+        temp("results/mapped/{sample}.annotated.cram"),
     resources:
         mem_gb="10",
     log:
-        "logs/fgbio/annotate_bam/{sample}.{bam_or_cram}.log",
+        "logs/fgbio/annotate_bam/{sample}.cram.log",
     wrapper:
         "v1.2.0/bio/fgbio/annotatebamwithumis"
 
 
 rule mark_duplicates:
     input:
-        bams=lambda wc: "results/mapped/{sample}.{bam_or_cram}"
+        bams=lambda wc: "results/mapped/{sample}.cram"
         if units.loc[wc.sample, "umis"].isnull().any()
-        else "results/mapped/{sample}.annotated.{bam_or_cram}",
+        else "results/mapped/{sample}.annotated.cram",
         ref=genome,
     output:
-        bam=temp("results/dedup/{sample}.{bam_or_cram}"),
-        metrics="results/qc/dedup/{sample}.{bam_or_cram}.metrics.txt",
+        bam=temp("results/dedup/{sample}.cram"),
+        metrics="results/qc/dedup/{sample}.cram.metrics.txt",
     log:
-        "logs/picard/dedup/{sample}.{bam_or_cram}.log",
+        "logs/picard/dedup/{sample}.cram.log",
     params:
         extra=get_markduplicates_extra,
         embed_ref=True,
@@ -142,7 +145,7 @@ rule apply_bqsr:
         ref_fai=genome_fai,
         recal_table="results/recal/{sample}.grp",
     output:
-        bam=protected("results/recal/{sample}.bam"),
+        bam="results/recal/{sample}.bam",
         bai="results/recal/{sample}.bai",
     log:
         "logs/gatk/gatk_applybqsr/{sample}.log",
@@ -151,3 +154,17 @@ rule apply_bqsr:
         java_opts="",  # optional
     wrapper:
         "v1.2.0/bio/gatk/applybqsr"
+
+
+rule recal_cram:
+    input:
+        bam="results/recal/{sample}.bam",
+        genome=genome,
+    output:
+        cram="results/recal/{sample}.cram"
+    log:
+        "logs/recal_cram/{sample}.log",
+    conda:
+        "../envs/samtools.yaml"
+    shell:
+        "samtools view --output-fmt cram,embed_ref --reference {input.genome} {input.bam} -@ 88 > {output.cram}"
