@@ -1,5 +1,4 @@
 channels:
   - conda-forge
 dependencies:
-  - jinja2 =2.10
-  - pandas =1.1
+  - datavzrd =1.14

@@ -2,8 +2,8 @@ samples: config/samples_aicardi.tsv
 
 units: config/units_aicardi.tsv
 
-igv_report:
-  activate: false
+# Optional BED file with target regions
+# target_regions: "path/to/taget-regions.bed"
 
 ref:
   # Number of chromosomes to consider for calling.
@@ -12,9 +12,13 @@ ref:
   # Ensembl species name
   species: homo_sapiens
   # Ensembl release
-  release: 100
+  release: 105
   # Genome build
   build: GRCh38
+  # Optionally, instead of downloading the whole reference from Ensembl via the 
+  # parameters above, specify a specific chromosome below and uncomment the line.
+  # This is usually only relevant for testing.
+  # chromosome: 21
 
 primers:
   trimming:
@@ -22,33 +26,30 @@ primers:
     # path to fasta files containg primer sequences
     primers_fa1: "path/to/primer-fa1"
     primers_fa2: "path/to/primer-fa2"
-     # Library mean + error determines the maximum insert size between the outer primer ends.
-    library_error: 0
+    # optional primer file allowing to define primers per sample
+    # overwrites primers_fa1 and primers_fa2
+    # the tsv file requires three fields: panel, fa1 and fa2 (optional)
+    tsv: ""
     # Mean insert size between the outer primer ends.
+    # If 0 or not set the bowtie default value of 250 will be used
     library_length: 0
 
 # Estimation of tumor mutational burden.
-tmb:
+mutational_burden:
   activate: false
-  # Size of the sequenced coding genome for TMB estimation
+  # Size of the sequenced coding genome for mutational burden estimation
   # Attention: when doing panel sequencing, set this to the
   # CAPTURED coding genome, not the entire one!
   coding_genome_size: 3e7
   # Plotting modes - hist (stratified histogram)
   # or curve (stratified curve)
   mode:
-    - hist
     - curve
-  # Name of the tumor sample in the scenario.yaml.
-  tumor_sample: tumor
-  somatic_events:
-    - SOMATIC_TUMOR_LOW
-    - SOMATIC_TUMOR_MEDIUM
-    - SOMATIC_TUMOR_HIGH
+    - hist
 
-# printing of variants in a matrix, sorted by recurrence
+# printing of variants in interactive tables
 report:
-  # if stratificatio is deactivated, one oncoprint for all
+  # if stratification is deactivated, one report for all
   # samples will be created.
   activate: false
   max_read_depth: 250
@@ -57,18 +58,9 @@ report:
     # select a sample sheet column for stratification
     by-column: condition
 
-# printing of variants in a table format
-tables:
-  activate: true
-  # vembrane expression to generate the table
-  output:
-    expression: "INDEX, CHROM, POS, REF, ALT[0], ANN['Consequence'], ANN['IMPACT'], ANN['SYMBOL'], ANN['Feature']"
-    genotype: true
-    coverage: true
-    event_prob: true
-  generate_excel: true
-
 calling:
+  # Set to true to infer classical genotypes from Varlociraptor's VAF predictions
+  infer_genotypes: false
   delly:
     activate: false
   freebayes:
@@ -79,52 +71,68 @@ calling:
     # Filter candidate variants (this filter helps to keep the number of evaluated candidates small).
     # It should ideally generate a superset of all other filters defined below.
     # Annotation of candidate variants tries to be as fast as possible, only using VEP
-    # default parameters.
-    candidates: "(QUAL > 1) and (not ANN['gnomad_AF'] or float(ANN['gnomad_AF']) < 0.001)"
-    # Add any number of named filters here. They will be applied independenty,
-    # and can be referred in FDR control below to generate calls for different events.
-    # In particular, you can also filter by ID or dbsnp annotations here.
-    # See http://snpeff.sourceforge.net/SnpSift.html#filter
-    lowgnomad: "not ANN['gnomad_AF'] or float(ANN['gnomad_AF']) < 0.001"
+    # default parameters. Comment out or remove if not needed or intended.
+    # See https://github.com/vembrane/vembrane
+    candidates: "ANN['IMPACT'] != 'LOW'"
+    # Add any number of named filters here (replace myfilter with a reasonable name, 
+    # and add more below). Filtering happens with the vembrane filter language
+    # (see https://github.com/vembrane/vembrane), and you can refer to any fields that
+    # have been added by VEP during annotation (in the INFO/ANN field, see section 
+    # annotations/vep below).
+    # Filters will be applied independenty, and can be referred in FDR control below
+    # to generate calls for different events.
+    # You can for example filter by ANN fields, ID or dbsnp annotations here.
+    impact_filter: "ANN['IMPACT'] == 'HIGH'"
+    # If you need to use vembrane command line options beyond the filter expression,
+    # please use the filter sub-structure with 'expression:' for the filter expression
+    # and "aux-files:" for additional files with IDs for filtering. This can for example 
+    # be used for filtering by gene lists (with a file containing one gene name per line).
+    gene_list_filter:
+      aux-files:
+        super_interesting_genes: "config/super_interesting_genes.tsv"
+      expression: "ANN['GENE'] in AUX['super_interesting_genes']"
   fdr-control:
-    threshold: 1.0
+    threshold: 0.05
+    # denote whether local or global FDR shall be controlled
+    local: true
     events: 
       # Add any number of events here to filter for.
-      denovo:
-        varlociraptor:
-          - "denovo"
-        filter: lowgnomad
-      exist_brain:
-        varlociraptor:
-          - "mosaik_brain"
-          - "denovo"
-        filter: lowgnomad
-      # denovo:
-      #   varlociraptor:
-      #     - "denovo"
-      #   filter: lowgnomad
-      # rezessive_homozygous:
-      #   varlociraptor:
-      #     - "rezessive_homozygous"
-      #   filter: lowgnomad
-      # compound_het_candidates:
-      #   varlociraptor:
-      #     - "pos_ch_mother_strong"
-      #     - "pos_ch_father_strong"
-      #     - "pos_ch_weak"
-      #   filter: lowgnomad
-      # other:
-      #   varlociraptor:
-      #     - "other"
-      #   filter: lowgnomad
-        #filter: filtername
+      # The id of each event can be chosen freely, but needs to contain
+      # only alphanumerics and underscores
+      # ("somatic" below is just an example and can be modified as needed).
+      some_id:
+        # labels for the callset, displayed in the report. Will fall back to id if no labels specified
+        labels:
+          some-label: label text
+          other-label: label text
+        # optional subcategory for callset (e.g. "known variants", or "VUS"),
+        # comment out or remove to disable
+        subcategory: some subcategory
+        # Natural language description of the callset obtained here.
+        # This will occur in the report.
+        desc: |
+          Some description.
+        varlociraptor: 
+          # Add varlociraptor events to aggregated over.
+          # The probability for the union of these events is used for controlling
+          # the FDR.
+          - somatic_tumor_high
+          - somatic_tumor_medium
+        filter: # myfilter
+          # Add any number of filters here.
+          # A single filter can be set as string.
+          # Multiple filters can be defined as list and will be concatenated by 'and'
+          - impact_filter
+          - gene_list_filter
 
-# Will be ignored if calc_consensus_reads is activated
+# If calc_consensus_reads is activated duplicates will be merged
 remove_duplicates:
   activate: true
 
+# Experimental: calculate consensus reads from PCR duplicates.
+# if 'remove_duplicates' is deactivate only overlapping pairs will be merged
 calc_consensus_reads:
-  activate: true
+  activate: false
 
 annotations:
   vcfs:
@@ -141,6 +149,7 @@ annotations:
     # add more external VCFs as needed
     # cosmic: path/to/cosmic.vcf.gz
   dgidb:
+    # annotate variants with drug interactions of affected genes
     activate: false
     # List of datasources for filtering dgidb entries
     # Available sources can be found on http://dgidb.org/api/v2/interaction_sources.json
@@ -149,22 +158,41 @@ annotations:
   vep:
     # Consider removing --everything if VEP is slow for you (e.g. for WGS), 
     # and think carefully about which annotations you need.
-    params: ""
+    params: --everything --check_existing
     plugins:
       # Add any plugin from https://www.ensembl.org/info/docs/tools/vep/script/vep_plugins.html
       # Plugin args can be passed as well, e.g. "LoFtool,path/to/custom/scores.txt".
       - LoFtool
+      - REVEL
+
+# printing of variants in a table format (might be deprecated soon)
+tables:
+  activate: false
+  output:
+    # Uncomment and add VEP annotation fields to include (IMPACT, Consequence, Feature, SYMBOL, and HGVSp are always included)
+    annotation_fields:
+      - EXON
+      - CLIN_SIG
+    event_prob: true
+    observations: true
+  generate_excel: true
 
 params:
   cutadapt: ""
   picard:
-    MarkDuplicates: "VALIDATION_STRINGENCY=LENIENT"
+    MarkDuplicates: "--VALIDATION_STRINGENCY LENIENT"
   gatk:
     BaseRecalibrator: ""
     applyBQSR: ""
-  varlociraptor_preprocess:
-    max_depth: 200 # Set when processing panel data with high coverage
-  varlociraptor_call:
-    omit_read_bias: false # Set true when processing panel data
+  varlociraptor:
+    # add extra arguments for varlociraptor call
+    # For example, in case of panel data consider to omit certain bias estimations
+    # which might be misleading because all reads of an amplicon have the same start
+    # position, strand etc. (--omit-strand-bias, --omit-read-position-bias, 
+    # --omit-softclip-bias, --omit-read-orientation-bias).
+    call: ""
+    # Add extra arguments for varlociraptor preprocess. By default, we limit the depth to 200.
+    # Increase this value for panel sequencing!
+    preprocess: "--max-depth 200"
   freebayes:
     min_alternate_fraction: 0.05 # Reduce for calling variants with lower VAFs

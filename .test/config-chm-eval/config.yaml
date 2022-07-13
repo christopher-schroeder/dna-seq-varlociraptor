@@ -18,19 +18,16 @@ primers:
     activate: false
     primers_fa1: ""
     primers_fa2: ""
-    library_error: 0
     library_length: 0
 
 # Estimation of tumor mutational burden.
-tmb:
+mutational_burden:
   activate: false
   # Size of the sequenced coding genome for TMB estimation
   # Attention: when doing panel sequencing, set this to the
   # CAPTURED coding genome, not the entire one!
-  coding_genome_size: 3e7
-  # Name of the tumor sample in the scenario.yaml.
-  tumor_sample: tumor
-  somatic_events:
+  coding_genome_size: 3.0e7
+  events:
     - SOMATIC_TUMOR_LOW
     - SOMATIC_TUMOR_MEDIUM
     - SOMATIC_TUMOR_HIGH
@@ -51,57 +48,77 @@ calling:
         threshold: 0.01
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr005:
         threshold: 0.05
         varlociraptor: 
           - "PRESENT"
         filter: dummy
+        desc: Dummy variants
       fdr01:
         threshold: 0.1
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr015:
         threshold: 0.15
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr02:
         threshold: 0.2
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr025:
         threshold: 0.25
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr03:
         threshold: 0.3
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
       fdr035:
         threshold: 0.35
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr04:
         threshold: 0.4
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr045:
         threshold: 0.45
         varlociraptor: 
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
       fdr10:
         threshold: 1.0
         varlociraptor:
           - "PRESENT"
-        filter: dummy
+        filter:
+          - dummy
+        desc: Dummy variants
 
 
 
@@ -111,18 +128,27 @@ annotations:
     known: resources/variation.vcf.gz
   dgidb:
     activate: false
+  vep:
+    params: --everything
+    plugins: []
 
 
 params:
   cutadapt: ""
   picard:
-    MarkDuplicates: "VALIDATION_STRINGENCY=lenient"
+    MarkDuplicates: "--VALIDATION_STRINGENCY lenient"
   gatk:
     BaseRecalibrator: ""
-  varlociraptor_preprocess:
-    max_depth: 200
-  varlociraptor_call:
-    omit_read_bias: false # Set true when processing panel data
+  varlociraptor:
+    # add extra arguments for varlociraptor call
+    # For example, in case of panel data consider to omit certain bias estimations
+    # which might be misleading because all reads of an amplicon have the sample start
+    # position, strand etc. (--omit-strand-bias, --omit-read-position-bias, 
+    # --omit-softclip-bias, --omit-read-orientation-bias).
+    call: ""
+    # Add extra arguments for varlociraptor preprocess. By default, we limit the depth to 200.
+    # Increase this value for panel sequencing!
+    preprocess: "--max-depth 200"
   freebayes:
     min_alternate_fraction: 0.05 # Reduce for calling variants with lower VAFs
 
@@ -130,6 +156,16 @@ benchmarking:
   # this disables odds filtering and annotation
   activate: true
 
+
+tables:
+  activate: false
+  # vembrane expression to generate the table
+  output:
+    expression: "INDEX, CHROM, POS, REF, ALT[0], ANN['Consequence'], ANN['IMPACT'], ANN['SYMBOL'], ANN['Feature']"
+    genotype: true
+    coverage: true
+    event_prob: true
+  generate_excel: true
 
 report:
   activate: false

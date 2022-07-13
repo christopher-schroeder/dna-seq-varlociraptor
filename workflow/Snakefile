@@ -1,17 +1,24 @@
 from snakemake.utils import min_version
-min_version("6.0.5")
+
+min_version("7.3.8")
+
 
 configfile: "config/config.yaml"
 
+
 report: "report/workflow.rst"
 
+
 scattergather:
-    calling=60
+    calling=80,
+
 
 # Allow users to fix the underlying OS via singularity.
 container: "docker://continuumio/miniconda3"
 
+
 include: "rules/common.smk"
+include: "rules/qc.smk"
 include: "rules/benchmarking.smk"
 include: "rules/ref.smk"
 include: "rules/trimming.smk"
@@ -20,14 +27,15 @@ include: "rules/candidate_calling.smk"
 include: "rules/calling.smk"
 include: "rules/annotation.smk"
 include: "rules/filtering.smk"
-include: "rules/report.smk"
-include: "rules/tmb.smk"
+include: "rules/mutational_burden.smk"
 include: "rules/vega.smk"
 include: "rules/utils.smk"
 include: "rules/primers.smk"
 include: "rules/table.smk"
+include: "rules/regions.smk"
+include: "rules/plugins.smk"
+include: "rules/datavzrd.smk"
 
-groups = samples["group"].unique()
 
 batches = "all"
 if is_activated("report/stratify"):
@@ -36,10 +44,12 @@ if is_activated("report/stratify"):
 
 rule all:
     input:
-        get_final_output(),
-        get_tmb_targets(),
+        get_final_output,
 
 
 rule benchmark:
     input:
-        expand("benchmarking/{query}.summary", query=config["calling"]["fdr-control"]["events"])
+        expand(
+            "benchmarking/{query}.summary",
+            query=config["calling"]["fdr-control"]["events"],
+        ),

@@ -1,26 +1,27 @@
-species:
-  heterozygosity: 0.001
-  ploidy: 2
-  genome-size: 3.5e9
-  germline-mutation-rate: 1.2e-8
+# This scenario is templated with YTE (https://yte-template-engine.github.io)
+# and rendered for each group (see sample sheet).
+# A variable `samples` is available, holding the dataframe of
+# the sample sheet, filtered to those samples contained in the group to be rendered.
+# For example, this can be used to pass arbitrary column values (like the purity below),
+# to the sample definitions.
+# Note that sample names here must correspond to the alias column in the sample sheet.
+
+__definitions__:
+  - samples = params.samples.set_index("alias")
+  - |
+    def contamination():
+      return 1.0 - float(samples.loc["tumor", "purity"])
 
 samples:
-  brain:
-    inheritance:
-      mendelian:
-        from:
-          - mother
-          - father
-  blood:
-    inheritance:
-      mendelian:
-        from:
-          - mother
-          - father
-  mother:
-    sex: female
-  father:
-    sex: male
+  tumor:
+    resolution: 0.01
+    universe: "[0.0,1.0]"
+    contamination:
+      by: normal
+      fraction: ?contamination()
+  normal:
+    resolution: 0.1
+    universe: "0.0 | 0.5 | 1.0 | ]0.0,0.5["
 
 events:
   denovo: "(brain:0.5 | brain:1.0 | blood:0.5 | brain:1.0) & father:0.0 & mother:0.0"

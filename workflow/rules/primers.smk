@@ -1,170 +1,122 @@
-rule trim_primers:
+rule assign_primers:
     input:
-        bams="results/recal/{sample}.filtered.bam",
-        primers="results/primers/primer_regions.tsv",
+        bam=get_trimming_input,
+        primers=get_primer_regions,
     output:
-        "results/trimmed/{sample}.trimmed.bam"
-    params:
-        sort_order="Coordinate"
+        assigned="results/primers/{sample}.assigned.bam",
+        metric="results/primers/{sample}.metric.bam",
     conda:
         "../envs/fgbio.yaml"
     log:
-        "logs/trimming/{sample}.log"
+        "logs/primers/assignment/{sample}.log",
     shell:
-        "fgbio TrimPrimers -H -i {input.bams} -p {input.primers} -s {params.sort_order} -o {output} &> {log}"
+        "fgbio AssignPrimers -i {input.bam} -p {input.primers} -m {output.metric} -o {output.assigned} &> {log}"
 
 
-rule yara_index:
+rule filter_primerless_reads:
     input:
-        "resources/genome.fasta"
+        "results/primers/{sample}.assigned.bam",
     output:
-        "resources/genome.txt.size",
-        "resources/genome.txt.limits",
-        "resources/genome.txt.concat",
-        "resources/genome.rid.concat",
-        "resources/genome.rid.limits",
-        "resources/genome.sa.len",
-        "resources/genome.sa.val",
-        "resources/genome.sa.ind",
-        "resources/genome.lf.drp",
-        "resources/genome.lf.drs",
-        "resources/genome.lf.drv",
-        "resources/genome.lf.pst"
-    log:
-        "logs/yara/index.log"
+        primers="results/primers/{sample}.primers.bam",
+        primerless="results/primers/{sample}.primerless.bam",
     conda:
-        "../envs/yara.yaml"
-    shell:
-        "yara_indexer {input} &> {log}"
+        "../envs/filter_reads.yaml"
+    log:
+        "logs/primers/filter/{sample}.log",
+    script:
+        "../scripts/filter_primers.rs"
 
 
-# ToDO Return all best matches. Requires replacing bamToBed-rules
-rule map_primers:
-    threads: 12
+rule trim_primers:
     input:
-        reads=[config["primers"]["trimming"]["primers_fa1"], config["primers"]["trimming"]["primers_fa2"]],
-        ref="resources/genome.fasta",
-        idx=rules.yara_index.output
+        bam="results/primers/{sample}.primers.bam",
+        primers=get_primer_regions,
     output:
-        "results/primers/primers.bam"
+        trimmed="results/trimmed/{sample}.trimmed.bam",
     params:
-        library_error = config["primers"]["trimming"]["library_error"],
-        library_len = config["primers"]["trimming"]["library_length"],
-        ref_prefix=lambda w, input: os.path.splitext(input.ref)[0]
-    log:
-        "logs/yara/map_primers.log"
+        sort_order="Coordinate",
+        single_primer=get_single_primer_flag,
     conda:
-        "../envs/yara.yaml"
+        "../envs/fgbio.yaml"
+    log:
+        "logs/trimming/{sample}.log",
     shell:
-        "yara_mapper -t {threads} -ll {params.library_len} -ld {params.library_error} -o {output} {params.ref_prefix} {input.reads} > {log}"
+        "fgbio TrimPrimers -H -i {input.bam} -p {input.primers} -s {params.sort_order} {params.single_primer} -o {output.trimmed} &> {log}"
+
+
+rule bowtie_build:
+    input:
+        "resources/genome.fasta",
+    output:
+        directory("resources/bowtie_build/"),
+    params:
+        prefix="resources/bowtie_build/genome.fasta",
+    log:
+        "logs/bowtie/build.log",
+    conda:
+        "../envs/bowtie.yaml"
+    shell:
+        "mkdir {output} & "
+        "bowtie-build {input} {params.prefix} &> {log}"
+
+
+rule bowtie_map:
+    input:
+        primers=lambda w: get_panel_primer_input(w.panel),
+        idx="resources/bowtie_build",
+    output:
+        "results/primers/{panel}_primers.bam",
+    params:
+        primers=lambda wc, input: format_bowtie_primers(wc, input.primers),
+        prefix="resources/bowtie_build/genome.fasta",
+        insertsize=get_bowtie_insertsize(),
+        primer_format=lambda wc, input: "-f" if input_is_fasta(input.primers) else "",
+    log:
+        "logs/bowtie/{panel}_map.log",
+    conda:
+        "../envs/bowtie.yaml"
+    shell:
+        "bowtie {params.primers} -x {params.prefix} {params.insertsize} {params.primer_format} -S | samtools view -b - > {output} 2> {log}"
 
 
 rule filter_unmapped_primers:
     input:
-        "results/primers/primers.bam"
+        "results/primers/{panel}_primers.bam",
     output:
-        "results/primers/primers.filtered.bam"
+        "results/primers/{panel}_primers.filtered.bam",
     params:
-        "-b -f 2"
+        extra=get_filter_params,
     log:
-        "logs/primers/filtered.log"
+        "logs/primers/{panel}_primers_filtered.log",
     wrapper:
-        "0.61.0/bio/samtools/view"
-
-
-rule primer_to_bedpe:
-    input:
-        "results/primers/primers.filtered.bam"
-    output:
-        "results/primers/primers.bedpe"
-    log:
-        "logs/primers/primers_bedpe.log"
-    conda:
-        "../envs/bedtools.yaml"
-    shell:
-        "samtools sort -n {input} | bamToBed -i - -bedpe > {output} 2> {log}"
+        "v1.2.0/bio/samtools/view"
 
 
 rule primer_to_bed:
     input:
-        "results/primers/primers.filtered.bam"
+        "results/primers/{panel}_primers.filtered.bam",
     output:
-        "results/primers/primers.bed"
+        "results/primers/{panel}_primers.{ext}",
+    wildcard_constraints:
+        ext="bedpe|bed",
+    params:
+        format=lambda wc: "-bedpe" if wc.ext == "bedpe" else "",
     log:
-        "logs/primers/primers_bed.log"
+        "logs/primers/{panel}_primers_{ext}.log",
     conda:
         "../envs/bedtools.yaml"
     shell:
-        "samtools sort -n {input} | bamToBed -i - > {output} 2> {log}"
+        "samtools sort -n {input} | bamToBed -i - {params.format} > {output} 2> {log}"
 
 
 rule build_primer_regions:
     input:
-        "results/primers/primers.bedpe"
+        get_primer_bed,
     output:
-        "results/primers/primer_regions.tsv"
+        "results/primers/{panel}_primer_regions.tsv",
     log:
-        "logs/primers/build_primer_regions.log"
+        "logs/primers/build_{panel}_primer_regions.log",
     conda:
         "../envs/pandas.yaml"
     script:
         "../scripts/build_primer_regions.py"
-
-
-rule build_target_regions:
-    input:
-        "results/primers/primers.bedpe"
-    output:
-        "results/primers/target_regions.bed"
-    log:
-        "logs/primers/build_target_regions.log"
-    conda:
-        "../envs/pandas.yaml"
-    script:
-        "../scripts/build_target_regions.py"
-
-
-rule merge_target_regions:
-    input:
-        "results/primers/target_regions.bed"
-    output:
-        "results/primers/target_regions.merged.bed"
-    log:
-        "logs/primers/merge_target_regions.log"
-    conda:
-        "../envs/bedtools.yaml"
-    shell:
-        "sort -k1,1 -k2,2n {input} | mergeBed -i - > {output} 2> {log}"
-
-
-rule build_excluded_regions:
-    input:
-        target_regions="results/primers/target_regions.merged.bed",
-        genome_index = "resources/genome.fasta.fai"
-    output:
-        "results/primers/excluded_regions.bed"
-    params:
-        chroms=config["ref"]["n_chromosomes"]
-    log:
-         "logs/regions/excluded_regions.log"
-    conda:
-        "../envs/bedtools.yaml"
-    shell:
-        "(complementBed -i {input.target_regions} -g <(head "
-        "-n {params.chroms} {input.genome_index} | cut "
-        "-f 1,2 | sort -k1,1 -k 2,2n) > {output}) 2> {log}"
-
-
-# filter reads that map outside of the expected primer intervals
-rule filter_primerless_reads:
-    input:
-        bam="results/recal/{sample}.sorted.bam",
-        regions="results/primers/primers.bed"
-    output:
-        "results/recal/{sample}.filtered.bam"
-    log:
-        "logs/primers/{sample}_filter_reads.log"
-    conda:
-        "../envs/samtools.yaml"
-    shell:
-        "samtools view -h -b -L {input.regions} {input.bam} > {output} 2> {log}"

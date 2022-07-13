@@ -5,10 +5,27 @@ description: snakemake configuration file
 type: object
 
 definitions:
+  aux-file:
+    type: object
+    additionalProperties:
+      anyOf:
+        - type: string
   filterentry:
     type: object
     additionalProperties:
-      type: string
+      anyOf:
+        - type: string
+        - type: "null"
+        - type: object
+          properties:
+            aux-files:
+              $ref: "#/definitions/aux-file"
+              description: "a map of <name: string> pairs"
+            expression:
+              type: string
+          required:
+            - aux-files
+            - expression
   evententry:
     type: object
     properties:
@@ -17,12 +34,35 @@ definitions:
         items: 
           type: string
       filter:
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+      desc:
         type: string
+      labels:
+        type: object
+      subcategory:
+        type: string
+      sort:
+        type: array
+        items:
+          type: string
+      local:
+        type: boolean
+      threshold:
+        type: number
+        minimum: 0.0
+        maximum: 1.0
 
 properties:
   samples:
     type: string
   units:
+    type: string
+
+  target_regions:
     type: string
 
   ref:
@@ -54,11 +94,12 @@ properties:
             type: string
           primers_fq2:
             type: string
+          tsv:
+            type: string
           library_error:
             type: integer
           library_length:
             type: integer
-
 
   report:
     type: object
@@ -90,20 +131,20 @@ properties:
       output:
         type: object
         properties:
-          expression:
-            type: string
-          genotype:
-            type: boolean
-          coverage:
-            type: boolean
           event_prob:
             type: boolean
+          observations:
+            type: boolean
+          annotation_fields:
+            type: array
+            items:
+              type: string
     generate_excel:
       type: boolean
     required:
       - activate
 
-  tmb:
+  mutational_burden:
     type: object
     properties:
       activate:
@@ -111,17 +152,9 @@ properties:
       coding_genome_size:
         # TODO allow integer here!
         type: string
-      tumor_sample:
-        type: string
-      somatic_events:
-        type: array
-        items: 
-          type: string
     required:
       - activate
       - coding_genome_size
-      - tumor_sample
-      - somatic_events
 
 
   calling:
@@ -149,11 +182,12 @@ properties:
             type: number
             minimum: 0.0
             maximum: 1.0
+          local:
+            type: boolean
           events:
             $ref: "#/definitions/evententry"
             description: "a map of <eventname: event> pairs"
         required:
-          - threshold
           - events
     required:
       - delly
@@ -223,11 +257,16 @@ properties:
         required:
           - BaseRecalibrator
           - applyBQSR
-      varlociraptor_preprocess:
+      varlociraptor:
         type: object
         properties:
-          max_depth:
-            type: number
+          preprocess:
+            type: string
+          call:
+            type: string
+        required:
+          - preprocess
+          - call
       picard:
         type: object
         properties:
@@ -245,12 +284,13 @@ properties:
       - picard
       - cutadapt
       - freebayes
+      - varlociraptor
 
 required:
   - samples
   - units
   - ref
-  - tmb
+  - mutational_burden
   - calling
   - params
   - annotations

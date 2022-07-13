@@ -1,16 +1,39 @@
+import io
+
+
 rule render_scenario:
     input:
-        local(config["calling"]["scenario"])
+        template=local(config["calling"]["scenario"]),
     output:
-        report("results/scenarios/{group}.yaml", caption="../report/scenario.rst", category="Variant calling scenarios")
+        report(
+            "results/scenarios/{group}.yaml",
+            caption="../report/scenario.rst",
+            category="Variant calling scenarios",
+            labels={"sample group": "{group}"},
+        ),
     log:
-        "logs/render-scenario/{group}.log"
+        "logs/render-scenario/{group}.log",
     params:
-        samples = samples
+        samples=lambda wc: samples[samples["group"] == wc.group],
     conda:
-        "../envs/render_scenario.yaml"
-    script:
-        "../scripts/render-scenario.py"
+        None
+    template_engine:
+        "yte"
+
+
+rule varlociraptor_alignment_properties:
+    input:
+        ref="resources/genome.fasta",
+        ref_idx="resources/genome.fasta.fai",
+        bam="results/recal/{sample}.sorted.bam",
+    output:
+        "results/alignment-properties/{group}/{sample}.json",
+    log:
+        "logs/varlociraptor/estimate-alignment-properties/{group}/{sample}.log",
+    conda:
+        "../envs/varlociraptor.yaml"
+    shell:
+        "varlociraptor estimate alignment-properties {input.ref} --bam {input.bam} > {output} 2> {log}"
 
 
 rule varlociraptor_preprocess:
@@ -18,54 +41,61 @@ rule varlociraptor_preprocess:
         ref="resources/genome.fasta",
         ref_idx="resources/genome.fasta.fai",
         candidates=get_candidate_calls(),
-        bam=lambda w: get_varlociraptor_preprocessing_input(w),
-        bai=lambda w: get_varlociraptor_preprocessing_input(w, bai=True)
+        bam="results/recal/{sample}.sorted.bam",
+        bai="results/recal/{sample}.sorted.bai",
+        alignment_props="results/alignment-properties/{group}/{sample}.json",
     output:
-        "results/observations/{group}/{sample}.{caller}.{scatteritem}.bcf"
+        "results/observations/{group}/{sample}.{caller}.{scatteritem}.bcf",
     params:
-        max_depth="--max-depth {}".format(config["params"]["varlociraptor_preprocess"].get("max_depth", 200))
+        extra=config["params"]["varlociraptor"]["preprocess"],
     log:
-        "logs/varlociraptor/preprocess/{group}/{sample}.{caller}.{scatteritem}.log"
+        "logs/varlociraptor/preprocess/{group}/{sample}.{caller}.{scatteritem}.log",
     benchmark:
         "benchmarks/varlociraptor/preprocess/{group}/{sample}.{caller}.{scatteritem}.tsv"
     conda:
         "../envs/varlociraptor.yaml"
     shell:
-        "varlociraptor preprocess variants --candidates {input.candidates} {params.max_depth} "
-        "{input.ref} --bam {input.bam} --output {output} 2> {log}"
+        "varlociraptor preprocess variants --candidates {input.candidates} {params.extra} "
+        "--alignment-properties {input.alignment_props} {input.ref} --bam {input.bam} --output {output} "
+        "2> {log}"
 
 
 rule varlociraptor_call:
     input:
         obs=get_group_observations,
-        scenario="results/scenarios/{group}.yaml"
+        scenario="results/scenarios/{group}.yaml",
     output:
-        temp("results/calls/{group}.{caller}.{scatteritem}.bcf")
+        temp("results/calls/{group}.{caller}.{scatteritem}.bcf"),
     log:
-        "logs/varlociraptor/call/{group}.{caller}.{scatteritem}.log"
+        "logs/varlociraptor/call/{group}.{caller}.{scatteritem}.log",
     params:
-        obs=lambda w, input: ["{}={}".format(s, f) for s, f in zip(get_group_aliases(w), input.obs)]
+        obs=lambda w, input: [
+            "{}={}".format(s, f) for s, f in zip(get_group_aliases(w), input.obs)
+        ],
+        extra=config["params"]["varlociraptor"]["call"],
+        postprocess=">"
+        if not config["calling"].get("infer_genotypes")
+        else "| varlociraptor genotype >",
     conda:
         "../envs/varlociraptor.yaml"
     benchmark:
-         "benchmarks/varlociraptor/call/{group}.{caller}.{scatteritem}.tsv"
+        "benchmarks/varlociraptor/call/{group}.{caller}.{scatteritem}.tsv"
     shell:
-        "varlociraptor "
-        "call variants generic --obs {params.obs} "
-        "--scenario {input.scenario} > {output} 2> {log}"
+        "(varlociraptor call variants {params.extra} generic --obs {params.obs}"
+        " --scenario {input.scenario} {params.postprocess} {output}) 2> {log}"
 
 
 rule sort_calls:
     input:
-       "results/calls/{group}.{caller}.{scatteritem}.bcf",
+        "results/calls/{group}.{caller}.{scatteritem}.bcf",
     output:
-        temp("results/calls/{group}.{caller}.{scatteritem}.sorted.bcf")
+        temp("results/calls/{group}.{caller}.{scatteritem}.sorted.bcf"),
     log:
-        "logs/bcf-sort/{group}.{caller}.{scatteritem}.log"
+        "logs/bcf-sort/{group}.{caller}.{scatteritem}.log",
     conda:
         "../envs/bcftools.yaml"
     resources:
-        mem_mb=8000
+        mem_mb=8000,
     shell:
         "bcftools sort --max-mem {resources.mem_mb}M --temp-dir `mktemp -d` "
         "-Ob {input} > {output} 2> {log}"
@@ -73,13 +103,13 @@ rule sort_calls:
 
 rule bcftools_concat:
     input:
-        calls = get_scattered_calls(),
-        indexes = get_scattered_calls(ext="bcf.csi"),
+        calls=get_scattered_calls(),
+        indexes=get_scattered_calls(ext="bcf.csi"),
     output:
-        "results/calls/{group}.{scatteritem}.bcf"
+        "results/calls/{group}.{scatteritem}.bcf",
     log:
-        "logs/concat-calls/{group}.{scatteritem}.log"
+        "logs/concat-calls/{group}.{scatteritem}.log",
     params:
-        "-a -Ob" # TODO Check this
+        extra="-a",  # TODO Check this
     wrapper:
-        "0.59.2/bio/bcftools/concat"
+        "v1.2.0/bio/bcftools/concat"

@@ -1,37 +1,38 @@
 rule get_genome:
     output:
-        "resources/genome.fasta"
+        "resources/genome.fasta",
     log:
-        "logs/get-genome.log"
+        "logs/get-genome.log",
     params:
         species=config["ref"]["species"],
         datatype="dna",
         build=config["ref"]["build"],
-        release=config["ref"]["release"]
+        release=config["ref"]["release"],
+        chromosome=config["ref"].get("chromosome"),
     cache: True
     wrapper:
-        "0.59.2/bio/reference/ensembl-sequence"
+        "v1.2.0/bio/reference/ensembl-sequence"
 
 
 rule genome_faidx:
     input:
-        "resources/genome.fasta"
+        "resources/genome.fasta",
     output:
-        "resources/genome.fasta.fai"
+        "resources/genome.fasta.fai",
     log:
-        "logs/genome-faidx.log"
+        "logs/genome-faidx.log",
     cache: True
     wrapper:
-        "0.59.2/bio/samtools/faidx"
+        "v1.2.0/bio/samtools/faidx"
 
 
 rule genome_dict:
     input:
-        "resources/genome.fasta"
+        "resources/genome.fasta",
     output:
-        "resources/genome.dict"
+        "resources/genome.dict",
     log:
-        "logs/samtools/create_dict.log"
+        "logs/samtools/create_dict.log",
     conda:
         "../envs/samtools.yaml"
     cache: True
@@ -42,68 +43,69 @@ rule genome_dict:
 rule get_known_variants:
     input:
         # use fai to annotate contig lengths for GATK BQSR
-        fai="resources/genome.fasta.fai"
+        fai="resources/genome.fasta.fai",
     output:
-        vcf="resources/variation.vcf.gz"
+        vcf="resources/variation.vcf.gz",
     log:
-        "logs/get-known-variants.log"
+        "logs/get-known-variants.log",
     params:
         species=config["ref"]["species"],
         release=config["ref"]["release"],
         build=config["ref"]["build"],
-        type="all"
+        type="all",
+        chromosome=config["ref"].get("chromosome"),
     cache: True
     wrapper:
-        "0.59.2/bio/reference/ensembl-variation"
+        "v1.2.0/bio/reference/ensembl-variation"
 
 
 rule remove_iupac_codes:
     input:
-        "resources/variation.vcf.gz"
+        "resources/variation.vcf.gz",
     output:
-        "resources/variation.noiupac.vcf.gz"
+        "resources/variation.noiupac.vcf.gz",
     log:
-        "logs/fix-iupac-alleles.log"
+        "logs/fix-iupac-alleles.log",
     conda:
         "../envs/rbt.yaml"
     cache: True
     shell:
-        "rbt vcf-fix-iupac-alleles < {input} | bcftools view -Oz > {output}"
+        "(rbt vcf-fix-iupac-alleles < {input} | bcftools view -Oz > {output}) 2> {log}"
 
 
 rule bwa_index:
     input:
-        "resources/genome.fasta"
+        "resources/genome.fasta",
     output:
-        multiext("resources/genome.fasta", ".amb", ".ann", ".bwt", ".pac", ".sa")
+        idx=multiext("resources/genome.fasta", ".amb", ".ann", ".bwt", ".pac", ".sa"),
     log:
-        "logs/bwa_index.log"
+        "logs/bwa_index.log",
     resources:
-        mem_mb=369000
+        mem_mb=369000,
     cache: True
     wrapper:
-        "0.59.2/bio/bwa/index"
+        "v1.2.0/bio/bwa/index"
 
 
 rule get_vep_cache:
     output:
-        directory("resources/vep/cache")
+        directory("resources/vep/cache"),
     params:
         species=config["ref"]["species"],
         build=config["ref"]["build"],
-        release=config["ref"]["release"]
+        release=config["ref"]["release"],
     log:
-        "logs/vep/cache.log"
+        "logs/vep/cache.log",
     wrapper:
-        "0.59.2/bio/vep/cache"
+        "v1.2.0/bio/vep/cache"
 
 
 rule get_vep_plugins:
     output:
-        directory("resources/vep/plugins")
+        directory("resources/vep/plugins"),
     params:
-        release=config["ref"]["release"]
+        release=config["ref"]["release"],
     log:
-        "logs/vep/plugins.log"
+        "logs/vep/plugins.log",
     wrapper:
-        "0.59.2/bio/vep/plugins"
+        "v1.2.0/bio/vep/plugins"
