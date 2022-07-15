@@ -681,7 +681,7 @@ def get_annotation_pipes(wildcards, input):
 
 def get_annotations_extra(wildcards, input):
     ret = "{} --vcf_info_field ANN --hgvsg".format(
-            config["annotations"]["vep"]["params"]
+            config["annotations"]["vep"]["params"])
 
     if annotations:
         custom_str = " ".join(f"--custom {path},{prefix},vcf,exact,,{','.join(ann['fields'])}" for (prefix, ann), path in zip(annotations, input.annotations))

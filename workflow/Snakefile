@@ -53,3 +53,7 @@ rule benchmark:
             "benchmarking/{query}.summary",
             query=config["calling"]["fdr-control"]["events"],
         ),
+
+rule only_recal:
+    input:
+        expand("results/recal/{sample}.cram", sample=samples["sample_name"])

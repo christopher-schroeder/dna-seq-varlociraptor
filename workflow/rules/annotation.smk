@@ -33,11 +33,9 @@ rule annotate_variants:
         # Pass a list of plugins to use, see https://www.ensembl.org/info/docs/tools/vep/script/vep_plugins.html
         # Plugin args can be added as well, e.g. via an entry "MyPlugin,1,FOO", see docs.
         plugins=config["annotations"]["vep"]["plugins"],
-        extra="{} --vcf_info_field ANN --hgvsg".format(
-            config["annotations"]["vep"]["params"]
-        ) + get_annotations_extra, #TODO
+        extra=get_annotations_extra
     log:
-        "logs/vep/{group}.{scatteritem}.annotate.log",
+        "logs/vep/{prefix}.{scatteritem}.annotate.log",
     threads: get_vep_threads()
     wrapper:
         "v1.2.0/bio/vep/annotate"
